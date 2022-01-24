@@ -1,0 +1,25 @@
+FROM nvidia/cuda:11.3.1-devel-ubuntu20.04
+
+RUN apt-get update && \
+    apt-get install -y curl vim git tmux ninja-build python3 python3-pip && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+
+RUN python3 -m pip install poetry
+
+RUN mkdir /workspace
+
+WORKDIR /workspace
+
+COPY pyproject.toml poetry.lock ./
+
+RUN poetry install --no-root --no-interaction
+
+RUN poetry run pip install --upgrade --no-cache-dir \
+    torch==`poetry export | grep torch== | cut -d';' -f1 | cut -d'=' -f3`+cu113 \
+    -f https://download.pytorch.org/whl/cu113/torch_stable.html
+
+WORKDIR /root
+
+RUN rm -r /workspace

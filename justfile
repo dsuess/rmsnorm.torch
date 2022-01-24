@@ -9,6 +9,9 @@ setup-cu11:
         torch==`poetry export | grep torch== | cut -d';' -f1 | cut -d'=' -f3`+cu113 \
         -f https://download.pytorch.org/whl/cu113/torch_stable.html
 
+docker-dev:
+    docker build -f docker/Dockerfile.dev .
+
 test:
     poetry run pytest
 
