@@ -1,57 +1,57 @@
+#include <vector>
+#include <iostream>
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-#include <vector>
-
-const int MAX_BLOCK_SIZE = 512;
-
-__host__ __forceinline__ int prev_power_of_two(unsigned int n)
-{
-  n |= (n >> 1);
-  n |= (n >> 2);
-  n |= (n >> 4);
-  n |= (n >> 8);
-  n |= (n >> 16);
-  return n - (n >> 1);
-}
-
 torch::Tensor rmsnorm_cuda_forward(
     torch::Tensor input,
     torch::Tensor weights)
 {
+  // There is no reason to use more than one stream as every kernel is
+  // sequentially dependent
+  cublasHandle_t handle = at::cuda::getCurrentCUDABlasHandle();
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  cublasSetStream(handle, stream);
+
   const auto batch_size = input.size(0);
   const auto seq_len = input.size(1);
-  const auto num_channels = input.size(2);
-  auto stream = at::cuda::getCurrentCUDAStream();
+  const auto embed_dim = input.size(2);
+  const auto vector_step = batch_size * seq_len;
+  const float alpha = 1.0;
+  const float beta = 0.0;
 
-  // Allocate batch-variance
-  float *channel_var;
-  {
-    const auto size = sizeof(float) * batch_size * seq_len;
-    cudaMallocAsync((void **)&channel_var, size, stream);
-  }
+  auto options = torch::TensorOptions().dtype(torch::kFloat32).device(at::kCUDA).requires_grad(false);
+  auto channel_variance = torch::zeros({batch_size, seq_len}, options);
 
-  auto out = torch::empty_like(input);
-  int block_x = max(32, min(MAX_BLOCK_SIZE, prev_power_of_two(num_channels) / 4));
-  int block_y = max(1, min(MAX_BLOCK_SIZE / block_x, prev_power_of_two(batch_size) / 4));
-  const dim3 block(block_x, block_y);
+  // TODO THis should use TORCH_CUDABLAS_CHECK
+  cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH);
+  // Input Linear Fwd
+  auto status = cublasDotEx(
+      handle, embed_dim,
+      static_cast<void *>(input.data_ptr()), CUDA_R_16F, vector_step,
+      static_cast<void *>(input.data_ptr()), CUDA_R_16F, vector_step,
+      static_cast<void *>(channel_variance.data_ptr()),
+      CUDA_R_32F, CUDA_R_32F);
 
-  switch (input.scalar_type())
-  {
-  case at::ScalarType::Float:
-    //to sth
-    break;
-  case at::ScalarType::Half:
-    //to sth
-    break;
-  default:
-    cudaFreeAsync(channel_var, stream);
-    throw std::runtime_error("Input-dtype not supported");
-  }
+  std::cout << status << std::endl;
+  std::cout << channel_variance << std::endl;
 
-  cudaFreeAsync(channel_var, stream);
-  return out;
+  // switch (input.scalar_type())
+  // {
+  // case at::ScalarType::Float:
+  //   //to sth
+  //   break;
+  // case at::ScalarType::Half:
+  //   //to sth
+  //   break;
+  // default:
+  //   cudaFreeAsync(channel_var, stream);
+  //   throw std:out:rououttuntime_error("Input-dtype not supported");
+  // }
+
+  //cudaFreeAsync(channel_var, stream);
+  return input;
 }

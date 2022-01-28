@@ -14,10 +14,10 @@ setup(
                 "rmsnorm/rmsnorm_cuda.cpp",
                 "rmsnorm/rmsnorm_cuda_kernel.cu",
             ],
-            include_dirs=[
-                pkg_root / "third_party" / "cutlass" / "include",
-                pkg_root / "third_party" / "cutlass" / "tools" / "util" / "include"
-            ],
+            #include_dirs=[
+                #pkg_root / "third_party" / "cutlass" / "include",
+                #pkg_root / "third_party" / "cutlass" / "tools" / "util" / "include"
+            #],
         )
     ],
     cmdclass={
