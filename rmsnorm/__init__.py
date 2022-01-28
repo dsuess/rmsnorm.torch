@@ -1,11 +1,9 @@
 from pathlib import Path
-
 import torch
+
 from torch import nn
 from torch.utils.cpp_extension import load
-
-basepath = Path(__file__).parent
-rmsnorm_cuda = load(name='rmsnorm_cuda', sources=[basepath / 'rmsnorm_cuda.cpp', basepath / 'rmsnorm_cuda_kernel.cu'])
+from rmsnorm import rmsnorm_cuda
 
 
 class RMSNorm(nn.Module):

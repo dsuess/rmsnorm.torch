@@ -1,18 +1,22 @@
 setup:
+    git submodule update --init
     poetry install
-    #mkdir -p .git/hooks
-    #ln -f -s `pwd`/hooks/* .git/hooks
+    poetry run python setup.py develop
 
 setup-cu11:
     @just setup
     poetry run pip install --upgrade \
         torch==`poetry export | grep torch== | cut -d';' -f1 | cut -d'=' -f3`+cu113 \
         -f https://download.pytorch.org/whl/cu113/torch_stable.html
+    poetry run python setup.py develop
 
 docker-dev:
     docker build -f docker/Dockerfile.dev .
 
-test:
+build:
+    poetry run python setup.py develop
+
+test: build
     poetry run pytest
 
 lint:
