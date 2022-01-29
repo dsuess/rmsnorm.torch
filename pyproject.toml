@@ -6,7 +6,8 @@ authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
-torch = "1.10.1"
+# Doesn't work with 1.10.1, see https://github.com/pytorch/pytorch/pull/67161
+torch = "1.10.2"
 
 [tool.poetry.dev-dependencies]
 black = "^21.12b0"
