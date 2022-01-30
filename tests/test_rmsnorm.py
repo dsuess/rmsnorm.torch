@@ -14,7 +14,7 @@ def device() -> str:
 
 RMS_IMPL = [RMSNorm, RMSNorm2]
 #DTYPES = ["float16", "float32"]
-DTYPES = ["float16"]
+DTYPES = ["float32"]
 
 
 @pytest.mark.skip
@@ -49,7 +49,6 @@ def test_rmsnorm(
     dtype = getattr(torch, dtype_str)
     x = 2 * torch.randn(*input_shape, dtype=dtype).to(device)
     variance = x.to(torch.float32).pow(2).mean(-1, keepdim=True)
-    print(variance[0, 0, 0])
 
     *shape, hidden_size = input_shape
     with torch.no_grad():

@@ -1,4 +1,4 @@
-#include <vector>
+ #include <vector>
 #include <iostream>
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
@@ -23,37 +23,39 @@ torch::Tensor rmsnorm_cuda_forward(
   const auto seq_len = input.size(1);
   const auto embed_dim = input.size(2);
   const auto vector_step = batch_size * seq_len;
-  const float alpha = 1.0;
+  const float alpha = 1.0 / embed_dim;
   const float beta = 0.0;
 
   auto options = torch::TensorOptions().dtype(torch::kFloat32).device(at::kCUDA).requires_grad(false);
   auto channel_variance = torch::zeros({batch_size, seq_len}, options);
 
-  // TODO THis should use TORCH_CUDABLAS_CHECK
   TORCH_CUDABLAS_CHECK_WORKAROUND(cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH));
-  // Input Linear Fwd
-  TORCH_CUDABLAS_CHECK_WORKAROUND(cublasDotEx(
-      handle, embed_dim,
-      static_cast<void *>(input.data_ptr()), CUDA_R_16F, vector_step,
-      static_cast<void *>(input.data_ptr()), CUDA_R_16F, vector_step,
-      static_cast<void *>(channel_variance.data_ptr()),
-      CUDA_R_32F, CUDA_R_32F));
+  TORCH_CUDABLAS_CHECK_WORKAROUND(
+    cublasGemmStridedBatchedEx(
+      handle,  // handle
+      CUBLAS_OP_T,  // transa
+      CUBLAS_OP_N,  // transb
+      1,  // m
+      1, // n
+      embed_dim, // k
+      static_cast<const void *>(&alpha), // alpha
+      static_cast<const void *>(input.data_ptr()), // A
+      CUDA_R_32F, // dtype(A)
+      embed_dim,  // lda
+      1,          // strideA
+      static_cast<const void *>(input.data_ptr()),  // B
+      CUDA_R_32F, // dtype(B)
+      embed_dim, // ldb
+      1, // strideB
+      static_cast<const void *>(&beta),  // beta
+      static_cast<void *>(channel_variance.data_ptr()), // C
+      CUDA_R_32F, //dtype(C)
+      1, // ldc
+      1, // strideC
+      vector_step, // batchCount
+      CUBLAS_COMPUTE_32F, // computeType
+      CUBLAS_GEMM_DEFAULT) // algo
+  );
 
-  std::cout << channel_variance << std::endl;
-
-  // switch (input.scalar_type())
-  // {
-  // case at::ScalarType::Float:
-  //   //to sth
-  //   break;
-  // case at::ScalarType::Half:
-  //   //to sth
-  //   break;
-  // default:
-  //   cudaFreeAsync(channel_var, stream);
-  //   throw std:out:rououttuntime_error("Input-dtype not supported");
-  // }
-
-  //cudaFreeAsync(channel_var, stream);
   return input;
 }
