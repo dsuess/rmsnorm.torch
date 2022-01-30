@@ -6,6 +6,9 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
+#include "cublas_helpers.h"
+
+
 torch::Tensor rmsnorm_cuda_forward(
     torch::Tensor input,
     torch::Tensor weights)
@@ -27,16 +30,15 @@ torch::Tensor rmsnorm_cuda_forward(
   auto channel_variance = torch::zeros({batch_size, seq_len}, options);
 
   // TODO THis should use TORCH_CUDABLAS_CHECK
-  cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH);
+  TORCH_CUDABLAS_CHECK_WORKAROUND(cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH));
   // Input Linear Fwd
-  auto status = cublasDotEx(
+  TORCH_CUDABLAS_CHECK_WORKAROUND(cublasDotEx(
       handle, embed_dim,
       static_cast<void *>(input.data_ptr()), CUDA_R_16F, vector_step,
       static_cast<void *>(input.data_ptr()), CUDA_R_16F, vector_step,
       static_cast<void *>(channel_variance.data_ptr()),
-      CUDA_R_32F, CUDA_R_32F);
+      CUDA_R_32F, CUDA_R_32F));
 
-  std::cout << status << std::endl;
   std::cout << channel_variance << std::endl;
 
   // switch (input.scalar_type())
