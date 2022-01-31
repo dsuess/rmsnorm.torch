@@ -1,57 +1,82 @@
+#include <vector>
+#include <iostream>
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-#include <vector>
+#include "cublas_helpers.h"
 
-const int MAX_BLOCK_SIZE = 512;
-
-__host__ __forceinline__ int prev_power_of_two(unsigned int n)
+__global__ void varianceScaleInput(float *inputs, float *variance, float *channel_weights, int num_elems, int num_channels)
 {
-  n |= (n >> 1);
-  n |= (n >> 2);
-  n |= (n >> 4);
-  n |= (n >> 8);
-  n |= (n >> 16);
-  return n - (n >> 1);
+  for (long j = blockIdx.x * blockDim.x + threadIdx.x;
+       j < num_elems;
+       j += blockDim.x * gridDim.x)
+  {
+    float *row_d_matrix = inputs + j * num_channels;
+    float sigma = rsqrt(variance[j] + 1e-6);
+
+    for (long i = blockIdx.y * blockDim.y + threadIdx.y;
+         i < num_channels;
+         i += blockDim.y * gridDim.y)
+    {
+      row_d_matrix[i] *= channel_weights[i] * sigma;
+    }
+  }
 }
 
 torch::Tensor rmsnorm_cuda_forward(
-    torch::Tensor input,
+    torch::Tensor inputs,
     torch::Tensor weights)
 {
-  const auto batch_size = input.size(0);
-  const auto seq_len = input.size(1);
-  const auto num_channels = input.size(2);
-  auto stream = at::cuda::getCurrentCUDAStream();
+  cublasHandle_t handle = at::cuda::getCurrentCUDABlasHandle();
+  cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
+  cublasSetStream(handle, stream);
 
-  // Allocate batch-variance
-  float *channel_var;
-  {
-    const auto size = sizeof(float) * batch_size * seq_len;
-    cudaMallocAsync((void **)&channel_var, size, stream);
-  }
+  const auto batch_size = inputs.size(0);
+  const auto seq_len = inputs.size(1);
+  const auto embed_dim = inputs.size(2);
+  const auto vector_step = batch_size * seq_len;
+  const float alpha = 1.0 / embed_dim;
+  const float beta = 0.0;
 
-  auto out = torch::empty_like(input);
-  int block_x = max(32, min(MAX_BLOCK_SIZE, prev_power_of_two(num_channels) / 4));
-  int block_y = max(1, min(MAX_BLOCK_SIZE / block_x, prev_power_of_two(batch_size) / 4));
-  const dim3 block(block_x, block_y);
+  auto options = torch::TensorOptions().dtype(torch::kFloat32).device(at::kCUDA).requires_grad(false);
+  auto channel_variance = torch::zeros({batch_size, seq_len, 1}, options);
 
-  switch (input.scalar_type())
-  {
-  case at::ScalarType::Float:
-    //to sth
-    break;
-  case at::ScalarType::Half:
-    //to sth
-    break;
-  default:
-    cudaFreeAsync(channel_var, stream);
-    throw std::runtime_error("Input-dtype not supported");
-  }
+  // TORCH_CUDABLAS_CHECK_WORKAROUND(cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH));
+  TORCH_CUDABLAS_CHECK_WORKAROUND(
+      cublasGemmStridedBatchedEx(
+          handle,                                           // handle
+          CUBLAS_OP_T,                                      // transa
+          CUBLAS_OP_N,                                      // transb
+          1,                                                // m
+          1,                                                // n
+          embed_dim,                                        // k
+          static_cast<const void *>(&alpha),                // alpha
+          static_cast<const void *>(inputs.data_ptr()),     // A
+          CUDA_R_32F,                                       // dtype(A);
+          embed_dim,                                        // lda
+          embed_dim,                                        // strideA
+          static_cast<const void *>(inputs.data_ptr()),     // B
+          CUDA_R_32F,                                       // dtype(B)
+          embed_dim,                                        // ldb
+          embed_dim,                                        // strideB
+          static_cast<const void *>(&beta),                 // beta
+          static_cast<void *>(channel_variance.data_ptr()), // C
+          CUDA_R_32F,                                       //dtype(C)
+          1,                                                // ldc
+          1,                                                // strideC
+          vector_step,                                      // batchCount
+          CUBLAS_COMPUTE_32F,                               // computeType
+          CUBLAS_GEMM_DEFAULT)                              // algo
+  );
 
-  cudaFreeAsync(channel_var, stream);
-  return out;
+  varianceScaleInput<<<1, 1>>>(
+      static_cast<float *>(inputs.data_ptr()),
+      static_cast<float *>(channel_variance.data_ptr()),
+      static_cast<float *>(weights.data_ptr()),
+      vector_step,
+      embed_dim);
+  return inputs;
 }
