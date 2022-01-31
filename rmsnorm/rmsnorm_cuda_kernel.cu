@@ -8,16 +8,20 @@
 
 #include "cublas_helpers.h"
 
+// For RTX2080Ti
+// FIXME Automate this choide
+const auto NUM_DEVICE_SM = 68;
+
 __global__ void varianceScaleInput(float *inputs, float *variance, float *channel_weights, int num_elems, int num_channels)
 {
-  for (long j = blockIdx.x * blockDim.x + threadIdx.x;
+  for (int j = blockIdx.x * blockDim.x + threadIdx.x;
        j < num_elems;
        j += blockDim.x * gridDim.x)
   {
     float *row_d_matrix = inputs + j * num_channels;
     float sigma = rsqrt(variance[j] + 1e-6);
 
-    for (long i = blockIdx.y * blockDim.y + threadIdx.y;
+    for (int i = blockIdx.y * blockDim.y + threadIdx.y;
          i < num_channels;
          i += blockDim.y * gridDim.y)
     {
@@ -39,7 +43,7 @@ torch::Tensor rmsnorm_cuda_forward(
   const auto embed_dim = inputs.size(2);
   const auto vector_step = batch_size * seq_len;
   const float alpha = 1.0 / embed_dim;
-  const float beta = 0.0;
+  const float beta = 1e-6;
 
   auto options = torch::TensorOptions().dtype(torch::kFloat32).device(at::kCUDA).requires_grad(false);
   auto channel_variance = torch::zeros({batch_size, seq_len, 1}, options);
@@ -72,7 +76,9 @@ torch::Tensor rmsnorm_cuda_forward(
           CUBLAS_GEMM_DEFAULT)                              // algo
   );
 
-  varianceScaleInput<<<1, 1>>>(
+  return inputs * weights * torch::rsqrt(channel_variance);
+
+  varianceScaleInput<<<32 * NUM_DEVICE_SM, 256>>>(
       static_cast<float *>(inputs.data_ptr()),
       static_cast<float *>(channel_variance.data_ptr()),
       static_cast<float *>(weights.data_ptr()),

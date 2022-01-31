@@ -15,10 +15,11 @@ def device() -> str:
 RMS_IMPL = [RMSNorm, RMSNorm2]
 #DTYPES = ["float16", "float32"]
 DTYPES = ["float32"]
+INPUT_SHAPES = [(16, 64, 512), (16, 128, 512)]
 
 
 @pytest.mark.parametrize("dtype_str", DTYPES)
-@pytest.mark.parametrize("input_shape", [(16, 64, 512)])
+@pytest.mark.parametrize("input_shape", INPUT_SHAPES)
 @pytest.mark.parametrize("impl", RMS_IMPL)
 def test_rmsnorm_benchmark(
     dtype_str: str,
@@ -37,7 +38,7 @@ def test_rmsnorm_benchmark(
 
 
 @pytest.mark.parametrize("dtype_str", DTYPES)
-@pytest.mark.parametrize("input_shape", [(16, 64, 512)])
+@pytest.mark.parametrize("input_shape", INPUT_SHAPES)
 @pytest.mark.parametrize("impl", RMS_IMPL)
 def test_rmsnorm(
     dtype_str: str,
