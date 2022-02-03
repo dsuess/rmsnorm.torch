@@ -39,13 +39,14 @@ torch::Tensor rmsnorm_cuda_forward(
   const auto seq_len = inputs.size(1);
   const auto embed_dim = inputs.size(2);
   const auto vector_step = batch_size * seq_len;
-  const float alpha = 1.0 / embed_dim;
-  const float beta = 1e-6;
+  // const half alpha = __float2half(1.0 / embed_dim);
+  // const half beta = __float2half(1e-6);
+  const float alpha = (1.0 / embed_dim);
+  const float beta = (1e-6);
 
-  auto options = torch::TensorOptions().dtype(torch::kFloat32).device(at::kCUDA).requires_grad(false);
+  auto options = torch::TensorOptions().dtype(torch::kFloat16).device(at::kCUDA).requires_grad(false);
   auto channel_variance = torch::zeros({batch_size, seq_len, 1}, options);
 
-  // TORCH_CUDABLAS_CHECK_WORKAROUND(cublasSetMathMode(handle, CUBLAS_TENSOR_OP_MATH));
   TORCH_CUDABLAS_CHECK_WORKAROUND(
       cublasGemmStridedBatchedEx(
           handle,                                           // handle
@@ -56,26 +57,30 @@ torch::Tensor rmsnorm_cuda_forward(
           embed_dim,                                        // k
           static_cast<const void *>(&alpha),                // alpha
           static_cast<const void *>(inputs.data_ptr()),     // A
-          CUDA_R_32F,                                       // dtype(A);
+          CUDA_R_16F,                                       // dtype(A);
           embed_dim,                                        // lda
           embed_dim,                                        // strideA
           static_cast<const void *>(inputs.data_ptr()),     // B
-          CUDA_R_32F,                                       // dtype(B)
+          CUDA_R_16F,                                       // dtype(B)
           embed_dim,                                        // ldb
           embed_dim,                                        // strideB
           static_cast<const void *>(&beta),                 // beta
           static_cast<void *>(channel_variance.data_ptr()), // C
-          CUDA_R_32F,                                       //dtype(C)
+          CUDA_R_16F,                                       //dtype(C)
           1,                                                // ldc
           1,                                                // strideC
           vector_step,                                      // batchCount
           CUBLAS_COMPUTE_32F,                               // computeType
-          CUBLAS_GEMM_DEFAULT)                              // algo
+          CUBLAS_GEMM_DEFAULT_TENSOR_OP)                    // algo
   );
+
+  return inputs * torch::rsqrt(channel_variance);
+  return inputs;
 
   // TODO Make this variable
   const dim3 block_dim(16,64,1);
   const dim3 grid_dim(16,16,1);
+
 
   varianceScaleInput<<<grid_dim, block_dim>>>(
       static_cast<float *>(inputs.data_ptr()),

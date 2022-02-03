@@ -13,9 +13,10 @@ def device() -> str:
 
 
 RMS_IMPL = [RMSNorm, RMSNorm2]
+#RMS_IMPL = [RMSNorm]
 #DTYPES = ["float16", "float32"]
-DTYPES = ["float32"]
-INPUT_SHAPES = [(16, 64, 512), (16, 128, 512)]
+DTYPES = ["float16"]
+INPUT_SHAPES = [(16, 64, 512), (16, 128, 512), (1, 256, 512)]
 
 
 @pytest.mark.parametrize("dtype_str", DTYPES)
