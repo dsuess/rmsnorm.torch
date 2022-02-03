@@ -30,7 +30,11 @@ good-names = []
 disable = []
 
 [tool.pytest.ini_options]
-addopts = ["--doctest-modules", "--benchmark-columns=median,stddev"]
+addopts = [
+    "--doctest-modules",
+    "--benchmark-columns=median,stddev",
+    "--benchmark-group-by=param:input_shape"
+]
 testpaths = ["rmsnorm", "tests"]
 filterwarnings = [
     "ignore: Failed to initialize NumPy:UserWarning"
